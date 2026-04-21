@@ -1,4 +1,4 @@
-telethon
 python-telegram-bot
 deep-translator
 python-dotenv
+feedparser
