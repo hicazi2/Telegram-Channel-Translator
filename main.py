@@ -102,7 +102,7 @@ async def check_feed():
 
 async def main():
     print("🤖 GTT Translator bot started!")
-    print("📡 Polling RSS feed every 5 minutes...")
+    print("📡 Polling RSS feed every minute...")
 
     if not seen_ids:
         print("⏳ No saved state found. Loading existing feed entries silently...")
@@ -119,7 +119,7 @@ async def main():
 
     while True:
         await check_feed()
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":
