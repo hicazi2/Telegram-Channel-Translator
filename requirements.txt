@@ -1,4 +1,5 @@
 python-telegram-bot
 deep-translator
 python-dotenv
-feedparser
+requests
+beautifulsoup4

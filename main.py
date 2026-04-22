@@ -1,10 +1,8 @@
 import os
 import json
 import asyncio
-import feedparser
-import hashlib
-import html
-from html.parser import HTMLParser
+import requests
+from bs4 import BeautifulSoup
 from pathlib import Path
 from telegram import Bot
 from telegram.error import RetryAfter, NetworkError, TimedOut
@@ -15,27 +13,11 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID"))
 
-RSS_URL = "https://www.gtt.to.it/cms/avvisi-e-informazioni-di-servizio?format=feed&type=rss"
+CHANNEL_URL = "https://t.me/s/gttavissi"
 SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
 translator = GoogleTranslator(source="it", target="en")
 bot = Bot(token=BOT_TOKEN)
-
-
-class _HTMLStripper(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self._parts = []
-
-    def handle_data(self, data):
-        self._parts.append(data)
-
-
-def strip_html(raw: str) -> str:
-    raw = html.unescape(raw)
-    stripper = _HTMLStripper()
-    stripper.feed(raw)
-    return " ".join(stripper._parts).strip()
 
 
 def load_seen_ids():
@@ -43,7 +25,7 @@ def load_seen_ids():
         try:
             return set(json.loads(SEEN_IDS_FILE.read_text()))
         except (json.JSONDecodeError, OSError) as e:
-            print(f"⚠️  Could not load seen_ids from disk: {e}. Starting fresh.")
+            print(f"⚠️  Could not load seen_ids: {e}. Starting fresh.")
     return set()
 
 
@@ -51,100 +33,99 @@ def save_seen_ids(seen_ids):
     try:
         SEEN_IDS_FILE.write_text(json.dumps(list(seen_ids)))
     except OSError as e:
-        print(f"⚠️  Could not save seen_ids to disk: {e}")
+        print(f"⚠️  Could not save seen_ids: {e}")
 
 
-seen_ids = load_seen_ids()
+def fetch_messages():
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; GTTBot/1.0)"}
+    try:
+        resp = requests.get(CHANNEL_URL, headers=headers, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        print(f"❌ Failed to fetch channel page: {e}")
+        return []
 
+    soup = BeautifulSoup(resp.text, "html.parser")
+    messages = []
 
-def get_entry_id(entry):
-    raw = entry.get("title", "") + entry.get("summary", "")
-    return hashlib.md5(raw.encode()).hexdigest()
+    for wrap in soup.select(".tgme_widget_message_wrap"):
+        msg_div = wrap.select_one(".tgme_widget_message[data-post]")
+        if not msg_div:
+            continue
+        msg_id = msg_div.get("data-post", "").strip()
+        text_div = wrap.select_one(".tgme_widget_message_text")
+        if not msg_id or not text_div:
+            continue
+        text = text_div.get_text(separator="\n").strip()
+        if text:
+            messages.append({"id": msg_id, "text": text})
+
+    return messages
 
 
 async def send_with_retry(text, max_retries=3):
     for attempt in range(max_retries):
         try:
-            await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="Markdown")
+            await bot.send_message(chat_id=GROUP_ID, text=text)
             return True
         except RetryAfter as e:
-            print(f"⏳ Telegram rate limit — waiting {e.retry_after}s...")
+            print(f"⏳ Rate limit — waiting {e.retry_after}s...")
             await asyncio.sleep(e.retry_after)
         except (NetworkError, TimedOut) as e:
             wait = 2 ** attempt
-            print(f"⚠️  Telegram network error ({type(e).__name__}: {e}), retrying in {wait}s...")
+            print(f"⚠️  Network error ({type(e).__name__}), retrying in {wait}s...")
             await asyncio.sleep(wait)
-    print(f"❌ Failed to send message after {max_retries} attempts.")
+    print("❌ Failed to send message after max retries.")
     return False
 
 
-async def check_feed():
-    print("🔍 Checking GTT RSS feed...")
-    feed = feedparser.parse(RSS_URL)
+async def main():
+    seen_ids = load_seen_ids()
+    messages = fetch_messages()
+    print(f"📨 Fetched {len(messages)} messages from channel")
 
-    if feed.bozo and not feed.entries:
-        print(f"❌ Failed to parse RSS feed: {feed.bozo_exception}")
+    if not messages:
+        print("⚠️  No messages fetched — channel may be unreachable.")
         return
 
-    print(f"📰 Found {len(feed.entries)} entries in feed")
+    # First run (empty cache): mark everything as seen, send nothing
+    if not seen_ids:
+        print("⏳ First run — marking existing messages as seen without sending...")
+        for msg in messages:
+            seen_ids.add(msg["id"])
+        save_seen_ids(seen_ids)
+        print(f"✅ Marked {len(seen_ids)} messages. Next run will send only new ones.")
+        return
 
-    for entry in feed.entries:
-        entry_id = get_entry_id(entry)
-        if entry_id in seen_ids:
-            continue
-
-        italian_text = strip_html(entry.get("summary", entry.get("title", "")))
-        if not italian_text:
-            seen_ids.add(entry_id)
-            save_seen_ids(seen_ids)
+    sent_count = 0
+    for msg in messages:
+        if msg["id"] in seen_ids:
             continue
 
         try:
-            translated_text = translator.translate(italian_text)
+            translated = translator.translate(msg["text"])
         except Exception as e:
-            print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — will retry next poll.")
+            print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — skipping.")
             continue
 
-        message = (
-            f"🚌 *GTT Update*\n\n"
-            f"🇮🇹 *Original:*\n{italian_text}\n\n"
-            f"🇬🇧 *English:*\n{translated_text}"
+        text = (
+            f"🚌 GTT Update\n\n"
+            f"🇮🇹 Original:\n{msg['text']}\n\n"
+            f"🇬🇧 English:\n{translated}"
         )
 
-        sent = await send_with_retry(message)
+        sent = await send_with_retry(text)
         if sent:
-            seen_ids.add(entry_id)
+            seen_ids.add(msg["id"])
             save_seen_ids(seen_ids)
-            print(f"✅ Sent: {translated_text[:60]}...")
+            sent_count += 1
+            print(f"✅ Sent: {msg['id']}")
 
-
-async def main():
-    print("🤖 GTT Translator bot started!")
-    print("📡 Polling RSS feed every minute...")
-
-    if not seen_ids:
-        print("⏳ No saved state found. Loading existing feed entries silently...")
-        feed = feedparser.parse(RSS_URL)
-        if feed.bozo and not feed.entries:
-            print(f"⚠️  Could not load initial feed: {feed.bozo_exception}")
-        else:
-            for entry in feed.entries:
-                seen_ids.add(get_entry_id(entry))
-            save_seen_ids(seen_ids)
-            print(f"✅ Loaded {len(seen_ids)} existing entries. Watching for new ones...")
+    if sent_count == 0:
+        print("ℹ️  No new messages.")
     else:
-        print(f"✅ Resumed from saved state with {len(seen_ids)} known entries.")
-
-    while True:
-        await check_feed()
-        await asyncio.sleep(60)
+        print(f"✅ Done — sent {sent_count} new message(s).")
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("👋 Bot stopped.")
-    except Exception as e:
-        print(f"❌ Fatal error: {e}")
-        raise
+    asyncio.run(main())
