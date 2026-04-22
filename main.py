@@ -89,7 +89,8 @@ async def main():
         except Exception as e:
             translated = f"(translation failed: {e})"
         await send_with_retry(
-            f"✅ GTT bot started — startup test\n\n"
+            f"✅ GTT bot is now running.\n"
+            f"This is the most recent message from @gttavvisi at the time of startup:\n\n"
             f"🇮🇹 Original:\n{last['text']}\n\n"
             f"🇬🇧 English:\n{translated}"
         )
