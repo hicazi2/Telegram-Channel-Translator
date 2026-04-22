@@ -3,6 +3,8 @@ import json
 import asyncio
 import feedparser
 import hashlib
+import html
+from html.parser import HTMLParser
 from pathlib import Path
 from telegram import Bot
 from telegram.error import RetryAfter, NetworkError, TimedOut
@@ -18,6 +20,22 @@ SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
 translator = GoogleTranslator(source="it", target="en")
 bot = Bot(token=BOT_TOKEN)
+
+
+class _HTMLStripper(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._parts = []
+
+    def handle_data(self, data):
+        self._parts.append(data)
+
+
+def strip_html(raw: str) -> str:
+    raw = html.unescape(raw)
+    stripper = _HTMLStripper()
+    stripper.feed(raw)
+    return " ".join(stripper._parts).strip()
 
 
 def load_seen_ids():
@@ -75,7 +93,7 @@ async def check_feed():
         if entry_id in seen_ids:
             continue
 
-        italian_text = entry.get("summary", entry.get("title", ""))
+        italian_text = strip_html(entry.get("summary", entry.get("title", "")))
         if not italian_text:
             seen_ids.add(entry_id)
             save_seen_ids(seen_ids)
