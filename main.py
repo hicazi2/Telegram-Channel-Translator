@@ -88,9 +88,20 @@ async def main():
         print("⚠️  No messages fetched — channel may be unreachable.")
         return
 
-    # First run (empty cache): mark everything as seen, send nothing
+    # First run (empty cache): send the latest message as a startup test, then mark all as seen
     if not seen_ids:
-        print("⏳ First run — marking existing messages as seen without sending...")
+        print("⏳ First run — sending latest message as startup test...")
+        last = messages[-1]
+        try:
+            translated = translator.translate(last["text"])
+        except Exception as e:
+            translated = f"(translation failed: {e})"
+        test_text = (
+            f"✅ GTT bot started — startup test\n\n"
+            f"🇮🇹 Original:\n{last['text']}\n\n"
+            f"🇬🇧 English:\n{translated}"
+        )
+        await send_with_retry(test_text)
         for msg in messages:
             seen_ids.add(msg["id"])
         save_seen_ids(seen_ids)
