@@ -30,5 +30,8 @@ jobs:
       - name: Run bot
         run: python main.py
         env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          SESSION_STRING: ${{ secrets.SESSION_STRING }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GROUP_ID: ${{ secrets.GROUP_ID }}

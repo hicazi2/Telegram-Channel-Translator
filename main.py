@@ -1,19 +1,23 @@
 import os
 import json
 import asyncio
-import requests
-from bs4 import BeautifulSoup
 from pathlib import Path
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telegram import Bot
 from telegram.error import RetryAfter, NetworkError, TimedOut
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
 
 load_dotenv()
+
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+SESSION_STRING = os.getenv("SESSION_STRING")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID"))
 
-CHANNEL_URL = "https://t.me/s/gttavissi"
+CHANNEL = "gttavissi"
 SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
 translator = GoogleTranslator(source="it", target="en")
@@ -36,33 +40,6 @@ def save_seen_ids(seen_ids):
         print(f"⚠️  Could not save seen_ids: {e}")
 
 
-def fetch_messages():
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; GTTBot/1.0)"}
-    try:
-        resp = requests.get(CHANNEL_URL, headers=headers, timeout=15)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        print(f"❌ Failed to fetch channel page: {e}")
-        return []
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    messages = []
-
-    for wrap in soup.select(".tgme_widget_message_wrap"):
-        msg_div = wrap.select_one(".tgme_widget_message[data-post]")
-        if not msg_div:
-            continue
-        msg_id = msg_div.get("data-post", "").strip()
-        text_div = wrap.select_one(".tgme_widget_message_text")
-        if not msg_id or not text_div:
-            continue
-        text = text_div.get_text(separator="\n").strip()
-        if text:
-            messages.append({"id": msg_id, "text": text})
-
-    return messages
-
-
 async def send_with_retry(text, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -81,14 +58,21 @@ async def send_with_retry(text, max_retries=3):
 
 async def main():
     seen_ids = load_seen_ids()
-    messages = fetch_messages()
-    print(f"📨 Fetched {len(messages)} messages from channel")
+
+    async with TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH) as client:
+        messages = []
+        async for msg in client.iter_messages(CHANNEL, limit=20):
+            if msg.text:
+                messages.append({"id": msg.id, "text": msg.text})
+        messages.reverse()  # oldest first so we send in chronological order
+
+    print(f"📨 Fetched {len(messages)} messages from {CHANNEL}")
 
     if not messages:
-        print("⚠️  No messages fetched — channel may be unreachable.")
+        print("⚠️  No messages fetched.")
         return
 
-    # First run (empty cache): send the latest message as a startup test, then mark all as seen
+    # First run (empty cache): send latest as startup test, mark all as seen
     if not seen_ids:
         print("⏳ First run — sending latest message as startup test...")
         last = messages[-1]
@@ -96,12 +80,11 @@ async def main():
             translated = translator.translate(last["text"])
         except Exception as e:
             translated = f"(translation failed: {e})"
-        test_text = (
+        await send_with_retry(
             f"✅ GTT bot started — startup test\n\n"
             f"🇮🇹 Original:\n{last['text']}\n\n"
             f"🇬🇧 English:\n{translated}"
         )
-        await send_with_retry(test_text)
         for msg in messages:
             seen_ids.add(msg["id"])
         save_seen_ids(seen_ids)
@@ -119,18 +102,16 @@ async def main():
             print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — skipping.")
             continue
 
-        text = (
+        sent = await send_with_retry(
             f"🚌 GTT Update\n\n"
             f"🇮🇹 Original:\n{msg['text']}\n\n"
             f"🇬🇧 English:\n{translated}"
         )
-
-        sent = await send_with_retry(text)
         if sent:
             seen_ids.add(msg["id"])
             save_seen_ids(seen_ids)
             sent_count += 1
-            print(f"✅ Sent: {msg['id']}")
+            print(f"✅ Sent message {msg['id']}")
 
     if sent_count == 0:
         print("ℹ️  No new messages.")
