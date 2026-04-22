@@ -59,12 +59,20 @@ async def send_with_retry(text, max_retries=3):
 async def main():
     seen_ids = load_seen_ids()
 
-    async with TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH) as client:
-        messages = []
-        async for msg in client.iter_messages(CHANNEL, limit=20):
-            if msg.text:
-                messages.append({"id": msg.id, "text": msg.text})
-        messages.reverse()  # oldest first so we send in chronological order
+    client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    await client.connect()
+
+    if not await client.is_user_authorized():
+        print("❌ Session is not authorized. Please regenerate SESSION_STRING.")
+        await client.disconnect()
+        return
+
+    messages = []
+    async for msg in client.iter_messages(CHANNEL, limit=20):
+        if msg.text:
+            messages.append({"id": msg.id, "text": msg.text})
+    messages.reverse()  # oldest first so we send in chronological order
+    await client.disconnect()
 
     print(f"📨 Fetched {len(messages)} messages from {CHANNEL}")
 
