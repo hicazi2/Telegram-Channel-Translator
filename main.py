@@ -17,7 +17,7 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID"))
 
-CHANNEL = "gttavissi"
+CHANNEL = "gttavvisi"
 SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
 translator = GoogleTranslator(source="it", target="en")
