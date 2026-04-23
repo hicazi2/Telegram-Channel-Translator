@@ -159,18 +159,26 @@ async def main():
         # On failure, fall back to "(translation unavailable)" so the message is
         # still delivered and marked as seen — without this, a persistently failing
         # translation would silently re-queue the message on every run forever.
+        translation_failed = False
         try:
             translated = translator.translate(msg["text"])
         except Exception as e:
             print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — sending original.")
-            translated = "(translation unavailable)"
+            translation_failed = True
 
         # Send the bilingual message to the group
-        sent = await send_with_retry(
-            f"🚌 GTT Update\n\n"
-            f"🇮🇹 Original:\n{msg['text']}\n\n"
-            f"🇬🇧 English:\n{translated}"
-        )
+        if translation_failed:
+            sent = await send_with_retry(
+                f"🚌 GTT Update\n\n"
+                f"🇮🇹 Original:\n{msg['text']}\n\n"
+                f"⚠️ Translation failed — original message shown above."
+            )
+        else:
+            sent = await send_with_retry(
+                f"🚌 GTT Update\n\n"
+                f"🇮🇹 Original:\n{msg['text']}\n\n"
+                f"🇬🇧 English:\n{translated}"
+            )
         if sent:
             # Mark this message as seen and save immediately.
             # We save after each message so progress isn't lost if something crashes mid-run.
