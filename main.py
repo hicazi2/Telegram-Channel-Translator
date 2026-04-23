@@ -43,9 +43,6 @@ CHANNEL = "gttavvisi"  # the Telegram channel username to read from
 # __file__ is this script's location. .parent is its folder. We store seen_ids.json next to it.
 SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
-bot = Bot(token=BOT_TOKEN)
-
-
 def translate(text):
     """Translate Italian text to English using the Azure Translator API."""
     response = requests.post(
@@ -84,7 +81,7 @@ def save_seen_ids(seen_ids):
         print(f"⚠️  Could not save seen_ids: {e}")
 
 
-async def send_with_retry(text, max_retries=3):
+async def send_with_retry(bot, text, max_retries=3):
     """Send a message to the Telegram group. Retries up to 3 times if it fails.
 
     Telegram sometimes rate-limits bots (too many messages too fast) or has
@@ -146,72 +143,78 @@ async def main():
         print("⚠️  No messages fetched.")
         return
 
-    # --- First run (seen_ids is empty, meaning no cache exists yet) ---
-    # Instead of silently doing nothing, we send the most recent message as a
-    # startup confirmation so you can verify the bot is working end-to-end.
-    if not seen_ids:
-        print("⏳ First run — sending latest message as startup test...")
-        last = messages[-1]  # the most recent message (last after reversing)
-        try:
-            translated = translate(last["text"])
-        except Exception as e:
-            translated = f"(translation failed: {e})"
-        await send_with_retry(
-            f"✅ GTT bot is now running.\n"
-            f"This is the most recent message from @gttavvisi at the time of startup:\n\n"
-            f"🇮🇹 Original:\n{last['text']}\n\n"
-            f"🇬🇧 English:\n{translated}"
-        )
-        # Mark all current messages as seen so they aren't re-sent next run
-        for msg in messages:
-            seen_ids.add(msg["id"])
-        save_seen_ids(seen_ids)
-        print(f"✅ Marked {len(seen_ids)} messages. Next run will send only new ones.")
-        return
-
-    # --- Normal run: check for new messages and send them ---
-    sent_count = 0
-    for msg in messages:
-        # Skip this message if we've already sent it in a previous run
-        if msg["id"] in seen_ids:
-            continue
-
-        # Translate the Italian text to English.
-        # On failure, fall back to "(translation unavailable)" so the message is
-        # still delivered and marked as seen — without this, a persistently failing
-        # translation would silently re-queue the message on every run forever.
-        translation_failed = False
-        try:
-            translated = translate(msg["text"])
-        except Exception as e:
-            print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — sending original.")
-            translation_failed = True
-
-        # Send the bilingual message to the group
-        if translation_failed:
-            sent = await send_with_retry(
-                f"🚌 GTT Update\n\n"
-                f"🇮🇹 Original:\n{msg['text']}\n\n"
-                f"⚠️ Translation failed — original message shown above."
-            )
-        else:
-            sent = await send_with_retry(
-                f"🚌 GTT Update\n\n"
-                f"🇮🇹 Original:\n{msg['text']}\n\n"
+    # Use Bot as an async context manager so the HTTP session is properly
+    # initialized and torn down (required by python-telegram-bot v20+).
+    async with Bot(token=BOT_TOKEN) as bot:
+        # --- First run (seen_ids is empty, meaning no cache exists yet) ---
+        # Instead of silently doing nothing, we send the most recent message as a
+        # startup confirmation so you can verify the bot is working end-to-end.
+        if not seen_ids:
+            print("⏳ First run — sending latest message as startup test...")
+            last = messages[-1]  # the most recent message (last after reversing)
+            try:
+                translated = translate(last["text"])
+            except Exception as e:
+                translated = f"(translation failed: {e})"
+            await send_with_retry(
+                bot,
+                f"✅ GTT bot is now running.\n"
+                f"This is the most recent message from @gttavvisi at the time of startup:\n\n"
+                f"🇮🇹 Original:\n{last['text']}\n\n"
                 f"🇬🇧 English:\n{translated}"
             )
-        if sent:
-            # Mark this message as seen and save immediately.
-            # We save after each message so progress isn't lost if something crashes mid-run.
-            seen_ids.add(msg["id"])
+            # Mark all current messages as seen so they aren't re-sent next run
+            for msg in messages:
+                seen_ids.add(msg["id"])
             save_seen_ids(seen_ids)
-            sent_count += 1
-            print(f"✅ Sent message {msg['id']}")
+            print(f"✅ Marked {len(seen_ids)} messages. Next run will send only new ones.")
+            return
 
-    if sent_count == 0:
-        print("ℹ️  No new messages.")
-    else:
-        print(f"✅ Done — sent {sent_count} new message(s).")
+        # --- Normal run: check for new messages and send them ---
+        sent_count = 0
+        for msg in messages:
+            # Skip this message if we've already sent it in a previous run
+            if msg["id"] in seen_ids:
+                continue
+
+            # Translate the Italian text to English.
+            # On failure, fall back to "(translation unavailable)" so the message is
+            # still delivered and marked as seen — without this, a persistently failing
+            # translation would silently re-queue the message on every run forever.
+            translation_failed = False
+            try:
+                translated = translate(msg["text"])
+            except Exception as e:
+                print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — sending original.")
+                translation_failed = True
+
+            # Send the bilingual message to the group
+            if translation_failed:
+                sent = await send_with_retry(
+                    bot,
+                    f"🚌 GTT Update\n\n"
+                    f"🇮🇹 Original:\n{msg['text']}\n\n"
+                    f"⚠️ Translation failed — original message shown above."
+                )
+            else:
+                sent = await send_with_retry(
+                    bot,
+                    f"🚌 GTT Update\n\n"
+                    f"🇮🇹 Original:\n{msg['text']}\n\n"
+                    f"🇬🇧 English:\n{translated}"
+                )
+            if sent:
+                # Mark this message as seen and save immediately.
+                # We save after each message so progress isn't lost if something crashes mid-run.
+                seen_ids.add(msg["id"])
+                save_seen_ids(seen_ids)
+                sent_count += 1
+                print(f"✅ Sent message {msg['id']}")
+
+        if sent_count == 0:
+            print("ℹ️  No new messages.")
+        else:
+            print(f"✅ Done — sent {sent_count} new message(s).")
 
 
 # This is the entry point — Python runs this block when you execute the script directly.
