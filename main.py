@@ -78,9 +78,11 @@ async def send_with_retry(text, max_retries=3):
             await bot.send_message(chat_id=GROUP_ID, text=text)
             return True
         except RetryAfter as e:
-            # Telegram told us to wait a specific number of seconds before retrying
-            print(f"⏳ Rate limit — waiting {e.retry_after}s...")
-            await asyncio.sleep(e.retry_after)
+            # Telegram told us to wait a specific number of seconds before retrying.
+            # Cap at 30s so a long rate-limit doesn't block the entire job.
+            wait = min(e.retry_after, 30)
+            print(f"⏳ Rate limit — waiting {wait}s (Telegram requested {e.retry_after}s)...")
+            await asyncio.sleep(wait)
         except (NetworkError, TimedOut) as e:
             # A general connection problem — wait longer each attempt (1s, 2s, 4s)
             wait = 2 ** attempt
@@ -153,12 +155,15 @@ async def main():
         if msg["id"] in seen_ids:
             continue
 
-        # Translate the Italian text to English
+        # Translate the Italian text to English.
+        # On failure, fall back to "(translation unavailable)" so the message is
+        # still delivered and marked as seen — without this, a persistently failing
+        # translation would silently re-queue the message on every run forever.
         try:
             translated = translator.translate(msg["text"])
         except Exception as e:
-            print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — skipping.")
-            continue
+            print(f"⚠️  Translation failed ({type(e).__name__}: {e}) — sending original.")
+            translated = "(translation unavailable)"
 
         # Send the bilingual message to the group
         sent = await send_with_retry(
