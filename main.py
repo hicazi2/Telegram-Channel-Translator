@@ -14,7 +14,7 @@ from telethon.sessions import StringSession  # StringSession stores your login i
 # This is a separate library from Telethon. It uses your bot (created via @BotFather)
 # to send the translated messages into your group chat.
 from telegram import Bot
-from telegram.error import RetryAfter, NetworkError, TimedOut  # specific error types we handle gracefully
+from telegram.error import RetryAfter, NetworkError, TimedOut, BadRequest  # specific error types we handle gracefully
 
 # --- requests: makes HTTP calls to the Azure Translator API ---
 import requests
@@ -99,6 +99,11 @@ async def send_with_retry(text, max_retries=3):
             wait = min(e.retry_after, 30)
             print(f"⏳ Rate limit — waiting {wait}s (Telegram requested {e.retry_after}s)...")
             await asyncio.sleep(wait)
+        except BadRequest as e:
+            # A permanent API error (e.g. invalid chat_id, message too long).
+            # Retrying will never fix this, so fail immediately.
+            print(f"❌ Bad request (will not retry): {e}")
+            return False
         except (NetworkError, TimedOut) as e:
             # A general connection problem — wait longer each attempt (1s, 2s, 4s)
             wait = 2 ** attempt
