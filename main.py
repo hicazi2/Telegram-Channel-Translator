@@ -16,8 +16,8 @@ from telethon.sessions import StringSession  # StringSession stores your login i
 from telegram import Bot
 from telegram.error import RetryAfter, NetworkError, TimedOut  # specific error types we handle gracefully
 
-# --- deep-translator: translates Italian text to English via MyMemory ---
-from deep_translator import MyMemoryTranslator
+# --- requests: makes HTTP calls to the Azure Translator API ---
+import requests
 
 # --- python-dotenv: loads secrets from a .env file when running locally ---
 # On GitHub Actions, secrets come from the repository settings instead.
@@ -34,7 +34,8 @@ API_HASH = os.getenv("API_HASH")            # your Telegram API hash (from my.te
 SESSION_STRING = os.getenv("SESSION_STRING") # your saved Telethon login session
 BOT_TOKEN = os.getenv("BOT_TOKEN")          # your bot's token (from @BotFather)
 GROUP_ID = int(os.getenv("GROUP_ID"))       # the ID of the group to send messages to
-MYMEMORY_EMAIL = os.getenv("MYMEMORY_EMAIL")  # registered email for 10k words/day free tier
+AZURE_TRANSLATOR_KEY = os.getenv("AZURE_TRANSLATOR_KEY")      # Azure Translator API key
+AZURE_TRANSLATOR_REGION = os.getenv("AZURE_TRANSLATOR_REGION")  # Azure resource region (e.g. "eastus")
 
 CHANNEL = "gttavvisi"  # the Telegram channel username to read from
 
@@ -43,12 +44,23 @@ CHANNEL = "gttavvisi"  # the Telegram channel username to read from
 SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
 bot = Bot(token=BOT_TOKEN)
-translator = MyMemoryTranslator(source="it-IT", target="en-US", email=MYMEMORY_EMAIL)
 
 
 def translate(text):
-    """Translate Italian text to English using the MyMemory API."""
-    return translator.translate(text)
+    """Translate Italian text to English using the Azure Translator API."""
+    response = requests.post(
+        "https://api.cognitive.microsofttranslator.com/translate",
+        params={"api-version": "3.0", "from": "it", "to": "en"},
+        headers={
+            "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
+            "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
+            "Content-Type": "application/json",
+        },
+        json=[{"text": text}],
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()[0]["translations"][0]["text"]
 
 
 def load_seen_ids():
