@@ -15,6 +15,7 @@ from telethon.sessions import StringSession  # StringSession stores your login i
 # to send the translated messages into your group chat.
 from telegram import Bot
 from telegram.error import RetryAfter, NetworkError, TimedOut, BadRequest  # specific error types we handle gracefully
+from telegram.helpers import escape_html
 
 # --- requests: makes HTTP calls to the Azure Translator API ---
 import requests
@@ -88,7 +89,7 @@ async def send_with_retry(bot, text, max_retries=3):
     brief network issues. This function handles those cases automatically."""
     for attempt in range(max_retries):
         try:
-            await bot.send_message(chat_id=GROUP_ID, text=text)
+            await bot.send_message(chat_id=GROUP_ID, text=text, parse_mode="HTML")
             return True
         except RetryAfter as e:
             # Telegram told us to wait a specific number of seconds before retrying.
@@ -160,8 +161,8 @@ async def main():
                 bot,
                 f"✅ GTT bot is now running.\n"
                 f"This is the most recent message from @gttavvisi at the time of startup:\n\n"
-                f"🇮🇹 Original:\n{last['text']}\n\n"
-                f"🇬🇧 English:\n{translated}"
+                f"🇬🇧 English:\n<b>{escape_html(translated)}</b>\n\n"
+                f"🇮🇹 Original:\n{escape_html(last['text'])}"
             )
             # Mark all current messages as seen so they aren't re-sent next run
             for msg in messages:
@@ -193,15 +194,15 @@ async def main():
                 sent = await send_with_retry(
                     bot,
                     f"🚌 GTT Update\n\n"
-                    f"🇮🇹 Original:\n{msg['text']}\n\n"
-                    f"⚠️ Translation failed — original message shown above."
+                    f"⚠️ Translation failed\n\n"
+                    f"🇮🇹 Original:\n{escape_html(msg['text'])}"
                 )
             else:
                 sent = await send_with_retry(
                     bot,
                     f"🚌 GTT Update\n\n"
-                    f"🇮🇹 Original:\n{msg['text']}\n\n"
-                    f"🇬🇧 English:\n{translated}"
+                    f"🇬🇧 English:\n<b>{escape_html(translated)}</b>\n\n"
+                    f"🇮🇹 Original:\n{escape_html(msg['text'])}"
                 )
             if sent:
                 # Mark this message as seen and save immediately.
