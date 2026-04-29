@@ -4,6 +4,7 @@ import json      # saves/loads data in JSON format (a simple text-based storage 
 import asyncio   # lets Python do multiple things without waiting — needed because Telegram API calls take time
 import html      # escapes special HTML characters (<, >, &) so Telegram's HTML parser doesn't break
 from pathlib import Path  # a cleaner way to work with file paths on any operating system
+from zoneinfo import ZoneInfo  # converts UTC timestamps to Italy's local time
 
 # --- Telethon: reads messages FROM Telegram as a real user ---
 # This is what lets the bot log in as YOU and read the gttavvisi channel.
@@ -131,7 +132,7 @@ async def main():
     messages = []
     async for msg in client.iter_messages(CHANNEL, limit=20):
         if msg.text:
-            messages.append({"id": msg.id, "text": msg.text})
+            messages.append({"id": msg.id, "text": msg.text, "date": msg.date})
 
     # iter_messages returns newest first, so we reverse to process oldest first.
     # This ensures messages are sent to the group in chronological order.
@@ -162,7 +163,9 @@ async def main():
                 f"✅ GTT bot is now running.\n"
                 f"This is the most recent message from @gttavvisi at the time of startup:\n\n"
                 f"🇬🇧 English:\n<b>{html.escape(translated)}</b>\n\n"
-                f"🇮🇹 Original:\n{html.escape(last['text'])}"
+                f"🚎🚌🚐🚎🚌🚐🚎🚌🚐\n\n"
+                f"🇮🇹 Original:\n{html.escape(last['text'])}\n\n"
+                f"⏰ {last['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {last['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
             )
             # Mark all current messages as seen so they aren't re-sent next run
             for msg in messages:
@@ -193,16 +196,20 @@ async def main():
             if translation_failed:
                 sent = await send_with_retry(
                     bot,
-                    f"🚌 GTT Update\n\n"
+                    f"🚌  GTT Update  🔔\n\n"
                     f"⚠️ Translation failed\n\n"
-                    f"🇮🇹 Original:\n{html.escape(msg['text'])}"
+                    f"🚎🚌🚐🚎🚌🚐🚎🚌🚐\n\n"
+                    f"🇮🇹 Original:\n{html.escape(msg['text'])}\n\n"
+                    f"⏰ {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
                 )
             else:
                 sent = await send_with_retry(
                     bot,
-                    f"🚌 GTT Update\n\n"
+                    f"🚌  GTT Update  🔔\n\n"
                     f"🇬🇧 English:\n<b>{html.escape(translated)}</b>\n\n"
-                    f"🇮🇹 Original:\n{html.escape(msg['text'])}"
+                    f"🚎🚌🚐🚎🚌🚐🚎🚌🚐\n\n"
+                    f"🇮🇹 Original:\n{html.escape(msg['text'])}\n\n"
+                    f"⏰ {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
                 )
             if sent:
                 # Mark this message as seen and save immediately.
