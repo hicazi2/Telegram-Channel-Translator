@@ -162,9 +162,9 @@ async def main():
                 bot,
                 f"✅ GTT bot is now running.\n"
                 f"This is the most recent message from @gttavvisi at the time of startup:\n\n"
-                f"🇬🇧 English:\n<b>{html.escape(translated)}</b>\n\n"
+                f"<b>{html.escape(translated)}</b>\n\n"
                 f"─────🚌─────\n\n"
-                f"🇮🇹 Original:\n{html.escape(last['text'])}\n\n"
+                f"🇮🇹 Original message from @gttavvisi:\n{html.escape(last['text'])}\n\n"
                 f"⏰ {last['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {last['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
             )
             # Mark all current messages as seen so they aren't re-sent next run
@@ -199,16 +199,16 @@ async def main():
                     f"🚌  GTT Update  🔔\n\n"
                     f"⚠️ Translation failed\n\n"
                     f"─────🚌─────\n\n"
-                    f"🇮🇹 Original:\n{html.escape(msg['text'])}\n\n"
+                    f"🇮🇹 Original message from @gttavvisi:\n{html.escape(msg['text'])}\n\n"
                     f"⏰ {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
                 )
             else:
                 sent = await send_with_retry(
                     bot,
                     f"🚌  GTT Update  🔔\n\n"
-                    f"🇬🇧 English:\n<b>{html.escape(translated)}</b>\n\n"
+                    f"<b>{html.escape(translated)}</b>\n\n"
                     f"─────🚌─────\n\n"
-                    f"🇮🇹 Original:\n{html.escape(msg['text'])}\n\n"
+                    f"🇮🇹 Original message from @gttavvisi:\n{html.escape(msg['text'])}\n\n"
                     f"⏰ {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
                 )
             if sent:
