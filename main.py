@@ -195,7 +195,8 @@ async def main():
                 sent = await send_with_retry(
                     bot,
                     f"🚌  GTT Update  🔔\n\n"
-                    f"⚠️ Translation failed\n\n"
+                    f"⚠️ <i>Translation unavailable — original text:</i>\n"
+                    f"<b>{html.escape(msg['text'])}</b>\n\n"
                     f"⏰ {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%H:%M')} | 📅 {msg['date'].astimezone(ZoneInfo('Europe/Rome')).strftime('%d %b %Y')}"
                 )
             else:
