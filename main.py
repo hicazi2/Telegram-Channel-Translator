@@ -45,21 +45,36 @@ CHANNEL = "gttavvisi"  # the Telegram channel username to read from
 # __file__ is this script's location. .parent is its folder. We store seen_ids.json next to it.
 SEEN_IDS_FILE = Path(__file__).parent / "seen_ids.json"
 
-def translate(text):
+def translate(text, max_retries=3):
     """Translate Italian text to English using the Azure Translator API."""
-    response = requests.post(
-        "https://api.cognitive.microsofttranslator.com/translate",
-        params={"api-version": "3.0", "from": "it", "to": "en"},
-        headers={
-            "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
-            "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
-            "Content-Type": "application/json",
-        },
-        json=[{"text": text}],
-        timeout=10,
-    )
-    response.raise_for_status()
-    return response.json()[0]["translations"][0]["text"]
+    import time
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                "https://api.cognitive.microsofttranslator.com/translate",
+                params={"api-version": "3.0", "from": "it", "to": "en"},
+                headers={
+                    "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
+                    "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
+                    "Content-Type": "application/json",
+                },
+                json=[{"text": text}],
+                timeout=10,
+            )
+            if response.status_code == 429:
+                wait = int(response.headers.get("Retry-After", 2 ** attempt))
+                print(f"⏳ Azure rate limit — waiting {wait}s...")
+                time.sleep(wait)
+                continue
+            response.raise_for_status()
+            return response.json()[0]["translations"][0]["text"]
+        except requests.RequestException as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"⚠️  Translation attempt {attempt + 1} failed ({e}), retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
 
 def load_seen_ids():
